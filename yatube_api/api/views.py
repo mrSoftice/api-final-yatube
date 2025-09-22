@@ -1,7 +1,6 @@
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, mixins, status
-from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.permissions import (
     IsAuthenticated,
     IsAuthenticatedOrReadOnly,
@@ -15,6 +14,7 @@ from rest_framework.viewsets import (
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 
+from api.filters import PostFilter
 from api.pagination import CustomPostPagination
 from api.permissions import IsAuthorOrReadOnly
 from api.serializers import (
@@ -23,7 +23,7 @@ from api.serializers import (
     GroupSerializer,
     PostSerializer,
 )
-from posts.models import Follow, Group, Post, User
+from posts.models import Follow, Group, Post
 
 
 class CustomTokenRefreshView(TokenRefreshView):
@@ -64,7 +64,7 @@ class PostViewSet(ModelViewSet):
     serializer_class = PostSerializer
     pagination_class = CustomPostPagination
     filter_backends = (DjangoFilterBackend, filters.SearchFilter)
-    filterset_fields = ('author__username', 'group', )
+    filterset_class = PostFilter
     search_fields = ('text',)
     permission_classes = [IsAuthorOrReadOnly, IsAuthenticatedOrReadOnly]
 
@@ -100,23 +100,3 @@ class FollowViewSet(mixins.CreateModelMixin,
 
     def get_queryset(self):
         return Follow.objects.filter(user=self.request.user)
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        following_username = serializer.validated_data['following']
-        if not following_username:
-            return Response(
-                '{ "following": ["Обязательное поле."] }',
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        if following_username == request.user.username:
-            return Response(
-                {'following': ['Нельзя подписаться на самого себя.']},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        following = get_object_or_404(User, username=following_username)
-
-        follow = Follow.objects.create(user=request.user, following=following)
-        serializer = self.get_serializer(follow)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)

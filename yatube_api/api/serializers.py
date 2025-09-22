@@ -40,17 +40,30 @@ class FollowSerializer(ModelSerializer):
         model = Follow
         fields = ('user', 'following',)
         read_only_fields = ('user',)
-        validators = [
-            serializers.UniqueTogetherValidator(
-                queryset=Follow.objects.all(),
-                fields=('user', 'following'),
-                message='Вы уже подписаны на этого пользователя'
-            )
-        ]
 
     def validate_following(self, value):
         try:
-            User.objects.get(username=value)
+            following = User.objects.get(username=value)
         except User.DoesNotExist:
             raise serializers.ValidationError('Пользователь не найден.')
+
+        user = self.context['request'].user
+
+        if user.username == value:
+            raise serializers.ValidationError(
+                'Нельзя подписаться на самого себя.'
+            )
+        if Follow.objects.filter(user=user, following=following).exists():
+            raise serializers.ValidationError(
+                'Вы уже подписаны на этого пользователя.'
+            )
+        # pdb.set_trace()
         return value
+
+    def create(self, validated_data):
+        '''Создание Follow после успешной валидации'''
+        # pdb.set_trace()
+        return Follow.objects.create(
+            user=self.context['request'].user,
+            following=User.objects.get(username=validated_data['following'])
+        )
