@@ -1,6 +1,7 @@
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, mixins, status
+from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.permissions import (
     IsAuthenticated,
     IsAuthenticatedOrReadOnly,
@@ -11,47 +12,17 @@ from rest_framework.viewsets import (
     ModelViewSet,
     ReadOnlyModelViewSet,
 )
-from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
-from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 
 from api.filters import PostFilter
-from api.pagination import CustomPostPagination
 from api.permissions import IsAuthorOrReadOnly
 from api.serializers import (
     CommentSerializer,
-    FollowSerializer,
+    FollowReadSerializer,
+    FollowWriteSerializer,
     GroupSerializer,
     PostSerializer,
 )
-from posts.models import Follow, Group, Post
-
-
-class CustomTokenRefreshView(TokenRefreshView):
-    def post(self, request, *args, **kwargs):
-        try:
-            return super().post(request, *args, **kwargs)
-        except (InvalidToken, TokenError):
-            return Response(
-                {
-                    "code": "token_not_valid",
-                    "detail": "Token is invalid or expired"
-                },
-                status=status.HTTP_401_UNAUTHORIZED
-            )
-
-
-class CustomTokenVerifyView(TokenVerifyView):
-    def post(self, request, *args, **kwargs):
-        try:
-            return super().post(request, *args, **kwargs)
-        except (InvalidToken, TokenError):
-            return Response(
-                {
-                    "code": "token_not_valid",
-                    "detail": "Token is invalid or expired"
-                },
-                status=status.HTTP_401_UNAUTHORIZED
-            )
+from posts.models import Group, Post
 
 
 class GroupViewSet(ReadOnlyModelViewSet):
@@ -62,7 +33,7 @@ class GroupViewSet(ReadOnlyModelViewSet):
 class PostViewSet(ModelViewSet):
     queryset = Post.objects.all()
     serializer_class = PostSerializer
-    pagination_class = CustomPostPagination
+    pagination_class = LimitOffsetPagination
     filter_backends = (DjangoFilterBackend, filters.SearchFilter)
     filterset_class = PostFilter
     search_fields = ('text',)
@@ -92,11 +63,23 @@ class CommentViewSet(ModelViewSet):
 class FollowViewSet(mixins.CreateModelMixin,
                     mixins.ListModelMixin,
                     GenericViewSet):
-    queryset = Follow.objects.all()
-    serializer_class = FollowSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = (filters.SearchFilter,)
     search_fields = ('following__username',)
 
     def get_queryset(self):
-        return Follow.objects.filter(user=self.request.user)
+        return self.request.user.followers.all()
+
+    def get_serializer_class(self):
+        if self.action in ("list", "retrieve"):
+            return FollowReadSerializer
+        return FollowWriteSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        # сериализуем объект уже через read-сериализатор
+        read_serializer = FollowReadSerializer(
+            serializer.instance, context={"request": request})
+        return Response(read_serializer.data, status=status.HTTP_201_CREATED)

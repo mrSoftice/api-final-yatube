@@ -16,17 +16,19 @@ class Group(models.Model):
 class Post(models.Model):
     text = models.TextField('Текст публикации')
     pub_date = models.DateTimeField('Дата публикации', auto_now_add=True)
-    author = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name='posts')
+    author = models.ForeignKey(User, on_delete=models.CASCADE)
     image = models.ImageField(
         upload_to='posts/', null=True, blank=True)
     group = models.ForeignKey(
         Group,
         on_delete=models.CASCADE,
-        related_name='posts',
         null=True,
         blank=True
     )
+
+    class Meta:
+        default_related_name = 'posts'
+        ordering = ['-pub_date']
 
     def __str__(self):
         return (
@@ -43,11 +45,15 @@ class Comment(models.Model):
         Post, on_delete=models.CASCADE, related_name='comments')
     text = models.TextField('текст комментария')
     created = models.DateTimeField(
-        'Дата добавления', auto_now_add=True, db_index=True)
+        'Дата добавления', auto_now_add=True)
 
 
 class Follow(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='followers'
+    )
     following = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
