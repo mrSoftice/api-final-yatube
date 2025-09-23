@@ -28,7 +28,7 @@ class Post(models.Model):
 
     class Meta:
         default_related_name = 'posts'
-        ordering = ['-pub_date']
+        ordering = ('-pub_date',)
 
     def __str__(self):
         return (
@@ -60,3 +60,14 @@ class Follow(models.Model):
         related_name='followings',
         verbose_name='following'
     )
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(user=models.F('following')),
+                name='prevent_self_follow',
+                violation_error_message='Нельзя подписываться на самого себя',
+                violation_error_code=(
+                    '{"following": "Нельзя подписаться на самого себя."}')
+            )
+        ]

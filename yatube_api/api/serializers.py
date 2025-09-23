@@ -1,9 +1,11 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 from rest_framework.serializers import ModelSerializer
-from rest_framework.validators import UniqueTogetherValidator
 
 from posts.models import Comment, Follow, Group, Post
+
+# from rest_framework.validators import UniqueTogetherValidator
+
 
 User = get_user_model()
 
@@ -16,8 +18,11 @@ class GroupSerializer(ModelSerializer):
 
 
 class PostSerializer(ModelSerializer):
-    author = serializers.StringRelatedField(
-        source='author.username', read_only=True)
+    author = serializers.SlugRelatedField(
+        slug_field='username',
+        read_only=True,
+        default=serializers.CurrentUserDefault()
+    )
 
     class Meta:
         model = Post
@@ -25,8 +30,11 @@ class PostSerializer(ModelSerializer):
 
 
 class CommentSerializer(ModelSerializer):
-    author = serializers.StringRelatedField(
-        source='author.username', read_only=True)
+    author = serializers.SlugRelatedField(
+        slug_field='username',
+        read_only=True,
+        default=serializers.CurrentUserDefault()
+    )
 
     class Meta:
         model = Comment
@@ -34,59 +42,33 @@ class CommentSerializer(ModelSerializer):
         read_only_fields = ('post',)
 
 
-# class FollowReadSerializer(serializers.ModelSerializer):
-#     user = serializers.CharField(source="user.username", read_only=True)
-#     following = serializers.CharField(
-#         source="following.username", read_only=True)
-
-#     class Meta:
-#         model = Follow
-#         fields = ("user", "following")
-
-
-class FollowReadSerializer(serializers.ModelSerializer):
-    """Сериализатор для чтения — возвращает username."""
-    user = serializers.CharField(source="user.username", read_only=True)
-    following = serializers.CharField(
-        source="following.username", read_only=True)
+class FollowSerializer(serializers.ModelSerializer):
+    user = serializers.SlugRelatedField(
+        slug_field='username',
+        default=serializers.CurrentUserDefault(),
+        queryset=User.objects.all()
+    )
+    following = serializers.SlugRelatedField(
+        slug_field='username',
+        queryset=User.objects.all()
+    )
 
     class Meta:
         model = Follow
         fields = ("user", "following")
 
-
-class FollowWriteSerializer(serializers.ModelSerializer):
-    """
-    Сериализатор для записи — принимает username,
-    user подставляется автоматически.
-    """
-    user = serializers.HiddenField(default=serializers.CurrentUserDefault())
-    following = serializers.CharField()
-
-    class Meta:
-        model = Follow
-        fields = ("user", "following")
-        validators = [
-            UniqueTogetherValidator(
-                queryset=Follow.objects.all(),
-                fields=("user", "following"),
-                message="Вы уже подписаны на этого пользователя"
-            )
-        ]
-
-    def validate_following(self, username):
-        user = self.context["request"].user
-        if user.username == username:
+    def validate_following(self, author):
+        user = self.context['request'].user
+        if user == author:
             raise serializers.ValidationError(
-                "Нельзя подписаться на самого себя.")
-        if not User.objects.filter(username=username).exists():
-            raise serializers.ValidationError("Пользователь не найден.")
+                {"following": "Нельзя подписаться на самого себя."}
+            )
+        return author
 
-        return User.objects.get(username=username)
-
-    def create(self, validated_data):
-        '''Создание Follow после успешной валидации'''
-        return Follow.objects.create(
-            user=validated_data["user"],
-            following=User.objects.get(username=validated_data['following'])
-        )
+    def validate(self, data):
+        user = self.context['request'].user
+        if user.followers.filter(following=data['following']).exists():
+            raise serializers.ValidationError(
+                {"following": "Вы уже подписаны на этого пользователя."}
+            )
+        return data
